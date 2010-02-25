@@ -8,16 +8,26 @@ Written by Mason Smith [masonium@gmail.com](mailto:masonium@gmail.com)
 5. [TODO](#todo)
 
 <h2 id="whatis">1. What is cl-autodiff?</h2>
-cl-autodiff is a library for automatic differentiation of mathematical functions. [Automatic Differentiation](http://www.autodiff.org) is a technique whereby derivatives of function are computed to machine precision, without the need for programming the derivative explicitly and without resorting to numerical approximation. It is licensed using the LLGPL, which should be included with a copy of this distribution. 
+cl-autodiff is a library for automatic differentiation of mathematical
+functions. [Automatic Differentiation](http://www.autodiff.org) is a technique
+whereby derivatives of function are computed to machine precision, without the
+need for programming the derivative explicitly and without resorting to
+numerical approximation. It is licensed using the LLGPL, which should be
+included with a copy of this distribution. If you find a use for cl-autodiff, be
+sure to let me know. 
 
 <h2 id="install">2. Installation</h2>
-cl-autodiff is installable via ASDF. Simply make a symbolic link to cl-autodiff.asd in your ASDF directory, and use `(asdf:oos 'asdf:load-op :cl-autodiff)` to compile and load the program. Alternatively, if you use clbuild, you can add cl-autodiff to your wnpp-projects file. The repo is located at:
+cl-autodiff is installable via ASDF. Simply make a symbolic link to
+cl-autodiff.asd in your ASDF directory, and use `(asdf:oos 'asdf:load-op
+:cl-autodiff)` to compile and load the program. Alternatively, if you use
+clbuild, you can add cl-autodiff to your wnpp-projects file. The repo is located
+at: 
 
 http://github.com/masonium/cl-autodiff.git
 
 <h2 id="usage">3. Usage</h2>
 
-Simply put, use DEFINE-WITH-DERIVATIVES as you would defun, to define mathematical functions.
+Simply put, use `DEFINE-WITH-DERIVATIVES` as you would `DEFUN` to define mathematical functions.
 
 For instance, `p(x) = 3*x^2 - 2*x + 1`.
 
@@ -71,22 +81,45 @@ Note that you can also use your user-defined functions in other functions.
     1
     #(-6)
 
+`DEFUN-AD` is an alias for `DEFINE-WITH-DERIVATIVES`. 
+
+`LAMBDA-AD` also does what you would expect.
+
+    CL-USER> (funcall (lambda-ad (x y) (/ (expt x 3) (expt y 3))) 2 2)
+    >> 1
+    #(1.5 -1.5)
+
 <h2 id="limit">4. Limitations</h2>
-cl-autodiff is still in, at best, a pre-alpha stage. As far as I have tested it (which has been almost not at all), it seems to work. However, there are a number of known limitations (and some unknown ones, I'm sure). 
+cl-autodiff is still in, at best, a pre-alpha stage. As far as I have tested it
+(which has been almost not at all), it seems to work. However, there are a
+number of known limitations (and some unknown ones, I'm sure). 
 
-* The only way of defining functions with automatic derivatives is with the `DEFINE-WITH-DERIVATIVES` macro. As of yet, there is no equivalent of LABELS or LAMBDA for it.
+* The only way of defining functions with automatic derivatives is with the
+  `DEFINE-WITH-DERIVATIVES` macro. As of yet, there is no equivalent of `LABELS`
+  <del>or `LAMBDA`</del> for it.
 
-* `DEFINE-WITH-DERIVATIVES` does not handle some special forms very well. Theoretically it can handle do loops, for instance, but I haven't tested it. 
+* `LAMBDA-AD` doesn't have the syntactic leeway that `LAMBDA` does. In
+  particular, neither `((lambda-ad (x) x) 1)` nor `(funcall #'(lambda (x) x) 1)`
+  will work.
+  
+* <del>`DEFINE-WITH-DERIVATIVES` does not handle some special forms very well. Theoretically it can handle do loops, for instance, but I haven't tested it. The problem is that `DEFINE-WITH-DERIVATIVES` does nothing to a form it doesn't recognize. An alternate (and probably more effective) approach would be to assume that, for any unrecognized form, the subforms should be parsed. I'll probably change this in a few versions.</del>
 
+* `DEFINE-WITH-DERIVATIVES` should be able to handle all macros, special forms,
+  etc., but the functionality has not been tested at all. In fact, testing
+  overall is rather limited. 
+  
 * `DEFINE-WITH-DERIVATIVES` can handle lambdas, but it CANNOT handle #'. So, for instance, (funcall (lambda (x) (+ x 3)) y) should differentiate fine (w/rt y, of course), but (funcall #'+ y 3) won't work at all. 
 
-In general, if you stick with the built in mathematical operators, labels, flets, let*, lets, and lambdas, you should be fine. 
+In general, if you stick with the built in mathematical operators, labels,
+flets, let*, lets, and lambdas, you should be fine. As far as I can tell, if you
+can compile/evaluate a form and get an answer at all, it will probably be correct.
+
 
 
 <h2 id="todo">5. TODO</h2>
-* Experiment with an operator overloading version
-  - would require non-standard functions (ad-+, ad-sin, etc.)
-
 * [labels/flet]-with-derivatives
 
 * Thorough unit testing
+
+* Experiment with an operator overloading version
+  - would require non-standard functions (ad-+, ad-sin, etc.)

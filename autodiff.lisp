@@ -6,29 +6,53 @@
   "Define a function that computes partial derivatives automatically"
   ;; Most of the work is done in MAKE-AUTODIFF. This functions just lifts the inputs 
   ;; to derivative n-tuples, which the autodiff expressions operate on.
-  (let ((ad-name (intern (concatenate 'string "ADFN-" (string name)))))
-    (setf (gethash name *ad-fns*) ad-name)
+  (let ((ad-name (symbolicate "ADFN-" name))
+	(no-deriv-name (symbolicate name "-NO-AD")))
+    (setf (gethash name *ad-fns*) ad-name)    
     (with-gensyms (result)
       `(progn 
 	 (defun ,ad-name ,variable-list
 	   ,@(mapcar (rcurry #'make-autodiff variable-list nil) body))
+	 (defun ,no-deriv-name ,variable-list
+	   ,@body)
 	 (defun ,name ,variable-list
 	   (let* (,@(mapcar #'(lambda (x) 
-			       (list x `(list ,x ,@(mapcar #'(lambda (y) 
-							       (if (eq x y) 1 0)) 
-							   variable-list))))
-			   variable-list)
+				(list x `(list ,x ,@(mapcar #'(lambda (y) 
+								(if (eq x y) 1 0)) 
+							    variable-list))))
+			    variable-list)
 		  (,result (,ad-name ,@variable-list)))
 	     (values (car ,result) (apply #'vector (cdr ,result)))))))))
+
+(defmacro defun-ad (name variable-list &body body)
+  `(define-with-derivatives ,name ,variable-list
+     ,@body))
+
+(defmacro lambda-ad (variable-list &body body)
+  "Create an anonymous automatically-differentiating function"
+  (with-gensyms (result)
+    `(lambda ,variable-list
+      (let* (,@(mapcar #'(lambda (x) 
+			   (list x `(list ,x ,@(mapcar #'(lambda (y) 
+							   (if (eq x y) 1 0)) 
+						       variable-list))))
+		       variable-list)
+	     (,result 
+	      (progn
+		,@(mapcar (rcurry #'make-autodiff variable-list nil) body))))
+	(values (car ,result) (apply #'vector (cdr ,result)))))))
 
 (defun make-autodiff (expr var-list env)
   "Take a mathematical expression, and return a new expression 
 that yields the original and each of the partial derivaties as a value"
   (cond
     ((null expr) nil)
-    ((or (numberp expr) (equal expr 'pi))
-     `(list ,expr ,@(make-list (length var-list) :initial-element 0)))
-    ((symbolp expr) expr)
+    ;; symbols in the variable list are left alone
+    ((or (member expr var-list) (member expr env))
+     expr)
+    ;; constants are literal numbers, pi, or symbols that we don't recognize
+    ((or (numberp expr) (equal expr 'pi) (symbolp expr))
+     `(list ,expr ,@(make-list (length var-list) :initial-element 0)))    
     ((listp expr)
      (let ((name (first expr)))
        (case name
@@ -40,7 +64,7 @@ that yields the original and each of the partial derivaties as a value"
 	 
 	 ;; numerical predicates and numbers
 	 ((< > <= >= = /= zerop minusp plusp evenp oddp 
-	   rationalp integerp realp logbitp floatp complexp)
+	     rationalp integerp realp logbitp floatp complexp)
 	  (make-autodiff-predicate expr var-list env))
 	 
 	 ;; special versions of certain arithmetic functions
@@ -49,14 +73,22 @@ that yields the original and each of the partial derivaties as a value"
 	 (atan
 	  (make-autodiff-atan expr var-list env))
 	 ;; passthrough forms
-	 ('(declare go return-from)
+	 ('(declare go locally)
 	  expr)
 	 ;; block-style forms
-	 ((block progn progv tagbody return-from return
-	    unwind-protect if setq setf funcall compose function-symbol)
+	 ((block catch return-from setq setf funcall)
+	  (make-autodiff-named-block expr var-list env))
+	 ((progn progv return if unwind-protect function)
 	  (make-autodiff-block expr var-list env))
+	 
+	 ;; tagbody
+	 ((tagbody)
+	  (make-autodiff-tagbody expr var-list env))	    
+
 	 ((let let*)
 	  (make-autodiff-let expr var-list env))
+
+	 ;; forms with new bindings
 	 ((labels flet)
 	  (make-autodiff-labels-flet expr var-list env))
 	 (lambda
@@ -104,7 +136,7 @@ that yields the original and each of the partial derivaties as a value"
 
 (defmacro define-binary-ad (sym args &body body)
   "Define the AD version of an existing binary function"
-  (let ((fn-name (intern (concatenate 'string "AD2-" (string sym))))
+  (let ((fn-name (symbolicate "AD2-" sym))
 	(deriv-body `(lambda ,args ,@body)))
     (with-gensyms (g1 g2)
       `(progn
@@ -119,7 +151,7 @@ that yields the original and each of the partial derivaties as a value"
 
 (defmacro define-unary-ad (sym args &body body)
   "Define the AD version of an existing unary function"
-  (let ((fn-name (intern (concatenate 'string "AD1-" (string sym))))
+  (let ((fn-name (symbolicate "AD1-" sym))
 	(deriv-body `(lambda ,args ,@body)))
     (with-gensyms (g)
       `(progn
@@ -141,7 +173,7 @@ that yields the original and each of the partial derivaties as a value"
 (define-binary-ad * (x y x1 y1)
   (+ (* x y1) (* y x1)))
 (define-binary-ad / (x y dx dy)
-  (/ (- (* y dx) (x dy))
+  (/ (- (* y dx) (* x dy))
      (* y y)))
 
 (define-binary-ad ash (x y dx dy)
@@ -202,6 +234,10 @@ that yields the original and each of the partial derivaties as a value"
   (declare (ignore x))
   dx)
 
+(define-unary-ad identity (x dx)
+  (declare (ignore x))
+  dx)
+
 ;; complex functions
 (define-unary-ad cis (x dx)
   (* (cis x) #C(0.0 1.0) dx))
@@ -210,6 +246,19 @@ that yields the original and each of the partial derivaties as a value"
   "Rewrite a block-form expression by preserving the original symbol and
 rewriting each remaining expression"
   `(,(first expr) ,@(mapcar (rcurry #'make-autodiff var-list env) (rest expr))))
+
+(defun make-autodiff-named-block (expr var-list env)
+  "Rewrite a block-form expression by preserving the original symbol and name and
+rewriting each remaining expression"
+  `(,(first expr) ,(second expr) 
+     ,@(mapcar (rcurry #'make-autodiff var-list env) (cddr expr))))
+
+(defun make-autodiff-tagbody (expr var-list env)
+  (let ((tags (remove-if-not #'symbolp (rest expr))))
+    "Rewrite a tagbody expression"
+    `(,(first expr) 
+       ,@(mapcar (rcurry #'make-autodiff var-list (union tags env)) 
+		 (cdr expr)))))
 
 (defun make-autodiff-let (expr var-list env)
   "Rewrite the value part of each binding, and each of the block expressions"
@@ -237,8 +286,7 @@ rewriting each remaining expression"
 
 (defun make-autodiff-lambda (expr var-list env)
   (destructuring-bind (l args &body body) expr
-    `(,l ,args ,@(mapcar (rcurry #'make-autodiff var-list env) body))))
-	 
+    `(,l ,args ,@(mapcar (rcurry #'make-autodiff args (union env var-list)) body))))
 
 (defun make-autodiff-binarize (expr var-list env default-value
 			       sym-fn sym-main sym-aux)
