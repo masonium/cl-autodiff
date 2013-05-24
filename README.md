@@ -12,7 +12,13 @@ cl-autodiff is a library for automatic differentiation of mathematical
 functions. [Automatic Differentiation](http://www.autodiff.org) is a technique
 whereby derivatives of function are computed to machine precision, without the
 need for programming the derivative explicitly and without resorting to
-numerical approximation. It is licensed using the LLGPL, which should be
+numerical approximation.
+
+cl-autodiff, specifically, is an implentation of forward accumulation
+automatic differentiation. This has some performance implications,
+noted in Limitations.
+
+It is licensed using the LLGPL, which should be
 included with a copy of this distribution. If you find a use for cl-autodiff, be
 sure to let me know. 
 
@@ -109,6 +115,10 @@ number of known limitations (and some unknown ones, I'm sure).
   overall is rather limited. 
   
 * `DEFINE-WITH-DERIVATIVES` can handle lambdas, but it CANNOT handle #'. So, for instance, (funcall (lambda (x) (+ x 3)) y) should differentiate fine (w/rt y, of course), but (funcall #'+ y 3) won't work at all. 
+
+* Partial derivatives are implemented by passing them around
+  throughout the function evaluation. A better approach would be to
+  use reverse accumulation, rather than forward accumulation.
 
 In general, if you stick with the built in mathematical operators, labels,
 flets, let*, lets, and lambdas, you should be fine. As far as I can tell, if you
